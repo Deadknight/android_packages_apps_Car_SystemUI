@@ -15,11 +15,17 @@
  */
 package com.android.systemui.car.hvac;
 
+import android.content.ContentResolver;
+import android.content.Context;
+import android.database.ContentObserver;
+import android.os.Handler;
+import android.provider.Settings;
 import android.view.View;
 
 import com.android.systemui.car.systembar.element.CarSystemBarElementController;
 import com.android.systemui.car.systembar.element.CarSystemBarElementStateController;
 import com.android.systemui.car.systembar.element.CarSystemBarElementStatusBarDisableController;
+import com.android.systemui.dagger.qualifiers.Main;
 
 import dagger.assisted.Assisted;
 import dagger.assisted.AssistedFactory;
@@ -30,21 +36,37 @@ import dagger.assisted.AssistedInject;
  */
 public class TemperatureControlViewController extends
             CarSystemBarElementController<TemperatureControlView> {
+    private static final String ARDA_BOTTOM_HVAC_VISIBLE = "arda_bottom_hvac_visible";
 
     private final HvacPanelOverlayViewController mHvacPanelOverlayViewController;
     private final HvacController mHvacController;
+    private final ContentResolver mContentResolver;
+    private final ContentObserver mVisibilityObserver;
+
+    private boolean mBottomHvacVisible;
+    private boolean mVisibilityObserverRegistered;
 
     @AssistedInject
     public TemperatureControlViewController(@Assisted TemperatureControlView hvacButton,
             CarSystemBarElementStatusBarDisableController disableController,
             CarSystemBarElementStateController stateController,
+            Context context,
+            @Main Handler mainHandler,
             HvacPanelOverlayViewController hvacPanelOverlayViewController,
             HvacController hvacController) {
         super(hvacButton, disableController, stateController);
 
         mHvacPanelOverlayViewController = hvacPanelOverlayViewController;
-        hvacButton.setTemperatureTextClickListener(this::onHvacClick);
         mHvacController = hvacController;
+        mContentResolver = context.getContentResolver();
+        mBottomHvacVisible = readBottomHvacVisible();
+        mVisibilityObserver = new ContentObserver(mainHandler) {
+            @Override
+            public void onChange(boolean selfChange) {
+                refreshVisibility();
+            }
+        };
+        hvacButton.setTemperatureTextClickListener(this::onHvacClick);
     }
 
     @AssistedFactory
@@ -57,15 +79,50 @@ public class TemperatureControlViewController extends
     protected void onViewAttached() {
         super.onViewAttached();
         mHvacController.registerHvacViews(mView);
+        if (!mVisibilityObserverRegistered) {
+            mContentResolver.registerContentObserver(
+                    Settings.Global.getUriFor(ARDA_BOTTOM_HVAC_VISIBLE),
+                    false,
+                    mVisibilityObserver);
+            mVisibilityObserverRegistered = true;
+        }
+        refreshVisibility();
     }
 
     @Override
     protected void onViewDetached() {
-        super.onViewDetached();
+        if (mVisibilityObserverRegistered) {
+            mContentResolver.unregisterContentObserver(mVisibilityObserver);
+            mVisibilityObserverRegistered = false;
+        }
         mHvacController.unregisterViews(mView);
+        super.onViewDetached();
+    }
+
+    @Override
+    protected boolean shouldBeVisible() {
+        return mBottomHvacVisible;
+    }
+
+    private boolean readBottomHvacVisible() {
+        return Settings.Global.getInt(
+                mContentResolver,
+                ARDA_BOTTOM_HVAC_VISIBLE,
+                /* def= */ 1) != 0;
+    }
+
+    private void refreshVisibility() {
+        mBottomHvacVisible = readBottomHvacVisible();
+        if (!mBottomHvacVisible) {
+            mHvacPanelOverlayViewController.closeIfOpen();
+        }
+        updateVisibility();
     }
 
     private void onHvacClick(View v) {
+        if (!mBottomHvacVisible) {
+            return;
+        }
         mHvacPanelOverlayViewController.toggle();
     }
 }

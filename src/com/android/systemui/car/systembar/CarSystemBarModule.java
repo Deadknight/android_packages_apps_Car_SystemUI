@@ -313,6 +313,13 @@ public abstract class CarSystemBarModule {
     public abstract CarSystemBarElementController.Factory bindCarSystemBarButtonControllerFactory(
             CarSystemBarButtonController.Factory factory);
 
+    /** Injects BackButtonController */
+    @Binds
+    @IntoMap
+    @ClassKey(BackButtonController.class)
+    public abstract CarSystemBarElementController.Factory bindBackButtonControllerFactory(
+            BackButtonController.Factory factory);
+
     /** Injects MicPrivacyChipViewController */
     @Binds
     @IntoMap

@@ -227,6 +227,13 @@ public class HvacPanelOverlayViewController extends OverlayPanelViewController i
         return x < bounds.left || x > bounds.right || y < bounds.top || y > bounds.bottom;
     }
 
+    /** Closes the HVAC panel when ARDA hides the bottom HVAC entry points. */
+    void closeIfOpen() {
+        if (isPanelExpanded()) {
+            dismissHvacPanel();
+        }
+    }
+
     private void dismissHvacPanel() {
         removeAutoDismissTimeout();
         mHandler.post(mAutoDismiss);

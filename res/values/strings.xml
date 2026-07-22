@@ -109,6 +109,8 @@
     <!--- Content of dialog triggered if the camera is disabled but an app tried to access it. [CHAR LIMIT=NONE] -->
     <string name="sensor_privacy_start_use_camera_dialog_content">To continue, turn on the infotainment system camera. This will turn on the camera for all apps that have permission.</string>
 
+    <!-- System bar contentDescription for Back-->
+    <string name="system_bar_back_label">Back</string>
     <!-- System bar contentDescription for home menu-->
     <string name="system_bar_home_label">Home Screen</string>
     <!-- System bar contentDescription for Dialer-->
