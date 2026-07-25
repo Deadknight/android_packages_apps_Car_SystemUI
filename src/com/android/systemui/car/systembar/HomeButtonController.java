@@ -15,6 +15,10 @@
  */
 package com.android.systemui.car.systembar;
 
+import android.app.ActivityManager;
+import android.content.ComponentName;
+import android.content.Intent;
+import android.util.Log;
 import android.view.View;
 
 import com.android.systemui.car.systembar.element.CarSystemBarElementController;
@@ -24,6 +28,8 @@ import com.android.systemui.car.users.CarSystemUIUserUtil;
 import com.android.systemui.car.wm.scalableui.EventDispatcher;
 import com.android.systemui.settings.UserTracker;
 
+import java.util.List;
+
 import dagger.assisted.Assisted;
 import dagger.assisted.AssistedFactory;
 import dagger.assisted.AssistedInject;
@@ -32,6 +38,12 @@ import dagger.assisted.AssistedInject;
  * A CarSystemBarElementController for handling Home button interactions.
  */
 public class HomeButtonController extends CarSystemBarButtonController  {
+    private static final String ACTION_TOGGLE_MAP_FULLSCREEN =
+            "com.android.car.carlauncher.action.TOGGLE_MAP_FULLSCREEN";
+    private static final String CAR_LAUNCHER_PACKAGE = "com.android.car.carlauncher";
+    private static final String MAPS_PACKAGE = "com.google.android.apps.maps";
+    private static final String CONTROL_LAYOUT_PERMISSION =
+            "com.android.car.carlauncher.permission.CONTROL_LAYOUT";
 
     @AssistedInject
     public HomeButtonController(@Assisted CarSystemBarButton homeButton,
@@ -44,6 +56,65 @@ public class HomeButtonController extends CarSystemBarButtonController  {
 
         homeButton.setVisibility(
                 CarSystemUIUserUtil.isSecondaryMUMDSystemUI() ? View.GONE : View.VISIBLE);
+
+        View.OnClickListener defaultClickListener = homeButton.getButtonClickListener();
+        homeButton.setOnClickListener(view -> {
+            boolean homeSurfaceActive = isHomeSurfaceActive(
+                    homeButton,
+                    userTracker.getUserId());
+            Log.i(getClass().getSimpleName(),
+                    "ARDA_HOME_SURFACE_ACTIVE=" + homeSurfaceActive
+                            + " selected=" + homeButton.getSelected());
+            if (!homeSurfaceActive) {
+                defaultClickListener.onClick(view);
+                return;
+            }
+            Intent toggleIntent = new Intent(ACTION_TOGGLE_MAP_FULLSCREEN)
+                    .setPackage(CAR_LAUNCHER_PACKAGE);
+            // CarLauncher registers this receiver with CONTROL_LAYOUT_PERMISSION,
+            // so only a signature-authorized sender can reach it. Do not also
+            // filter receivers by that permission here; that can discard the
+            // Launcher receiver itself.
+            homeButton.getContext().sendBroadcastAsUser(
+                    toggleIntent,
+                    userTracker.getUserHandle());
+        });
+    }
+
+
+    private static boolean isHomeSurfaceActive(View homeButton, int userId) {
+        ActivityManager activityManager =
+                homeButton.getContext().getSystemService(ActivityManager.class);
+        if (activityManager == null) {
+            return false;
+        }
+
+        List<ActivityManager.RunningTaskInfo> tasks =
+                activityManager.getRunningTasks(50);
+        boolean launcherVisible = false;
+        boolean focusedTaskBelongsToHomeSurface = false;
+
+        for (ActivityManager.RunningTaskInfo task : tasks) {
+            if (task.userId != userId) {
+                continue;
+            }
+
+            ComponentName component = task.topActivity != null
+                    ? task.topActivity : task.baseActivity;
+            String packageName = component != null
+                    ? component.getPackageName() : null;
+
+            if (task.isVisible && CAR_LAUNCHER_PACKAGE.equals(packageName)) {
+                launcherVisible = true;
+            }
+            if (task.isFocused
+                    && (CAR_LAUNCHER_PACKAGE.equals(packageName)
+                    || MAPS_PACKAGE.equals(packageName))) {
+                focusedTaskBelongsToHomeSurface = true;
+            }
+        }
+
+        return launcherVisible && focusedTaskBelongsToHomeSurface;
     }
 
     @AssistedFactory

@@ -218,6 +218,12 @@
     <dimen name="car_user_switcher_managed_badge_margin">1dp</dimen>
 
     <dimen name="car_system_bar_button_width">64dp</dimen>
+    <dimen name="arda_top_back_button_width">64dp</dimen>
+    <dimen name="arda_top_back_button_padding_start">10dp</dimen>
+    <dimen name="arda_top_back_button_padding_end">6dp</dimen>
+    <dimen name="arda_system_bar_clock_text_size">22sp</dimen>
+    <!-- Clock.reloadDimens() consumes this exact resource. -->
+    <dimen name="status_bar_clock_size">22sp</dimen>
     <dimen name="car_system_bar_button_icon_height">44dp</dimen>
     <dimen name="car_system_bar_user_name_button_height">56dp</dimen>
     <dimen name="car_system_bar_user_name_max_width">176dp</dimen>
