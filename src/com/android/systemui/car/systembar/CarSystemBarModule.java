@@ -403,7 +403,9 @@ public abstract class CarSystemBarModule {
     @IntoMap
     @StringKey(TOP_BAR_NAME)
     static CarSystemBarViewSupplier bindTopCarSystemBarViewSupplier() {
-        return new CarSystemBarViewSupplierUsingLayout(R.layout.car_top_system_bar,
+        return new ArdaSystemBarViewSupplier(
+                ArdaSystemBarViewSupplier.Side.TOP,
+                R.layout.car_top_system_bar,
                 R.layout.car_top_system_bar_unprovisioned);
     }
 
@@ -419,7 +421,9 @@ public abstract class CarSystemBarModule {
     @IntoMap
     @StringKey(LEFT_BAR_NAME)
     static CarSystemBarViewSupplier bindLeftCarSystemBarViewSupplier() {
-        return new CarSystemBarViewSupplierUsingLayout(R.layout.car_left_system_bar,
+        return new ArdaSystemBarViewSupplier(
+                ArdaSystemBarViewSupplier.Side.LEFT,
+                R.layout.car_left_system_bar,
                 R.layout.car_left_system_bar_unprovisioned);
     }
 
@@ -435,7 +439,9 @@ public abstract class CarSystemBarModule {
     @IntoMap
     @StringKey(RIGHT_BAR_NAME)
     static CarSystemBarViewSupplier bindRightCarSystemBarViewSupplier() {
-        return new CarSystemBarViewSupplierUsingLayout(R.layout.car_right_system_bar,
+        return new ArdaSystemBarViewSupplier(
+                ArdaSystemBarViewSupplier.Side.RIGHT,
+                R.layout.car_right_system_bar,
                 R.layout.car_right_system_bar_unprovisioned);
     }
 

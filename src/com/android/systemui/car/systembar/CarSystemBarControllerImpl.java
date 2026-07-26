@@ -35,6 +35,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.res.Configuration;
+import android.database.ContentObserver;
 import android.graphics.Rect;
 import android.inputmethodservice.InputMethodService;
 import android.os.Build;
@@ -42,6 +43,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.PatternMatcher;
 import android.os.RemoteException;
+import android.provider.Settings;
 import android.util.ArraySet;
 import android.util.Log;
 import android.view.View;
@@ -100,6 +102,12 @@ public class CarSystemBarControllerImpl implements CarSystemBarController,
     private static final String TAG = CarSystemBarController.class.getSimpleName();
 
     private static final String OVERLAY_FILTER_DATA_SCHEME = "package";
+    private static final String ARDA_BOTTOM_HVAC_VISIBLE =
+            "arda_bottom_hvac_visible";
+    private static final String ARDA_LEFT_RAIL_WHEN_HVAC_HIDDEN =
+            "arda_left_rail_when_hvac_hidden";
+    private static final String ARDA_RIGHT_STATUS_RAIL_ENABLED =
+            "arda_right_status_rail_enabled";
 
     private final Context mContext;
     private final CarSystemBarViewFactory mCarSystemBarViewFactory;
@@ -117,6 +125,7 @@ public class CarSystemBarControllerImpl implements CarSystemBarController,
     private final ConfigurationController mConfigurationController;
     private final CarSystemBarRestartTracker mCarSystemBarRestartTracker;
     private final int mDisplayId;
+    private final Handler mMainHandler;
     @Nullable
     private final ToolbarController mDisplayCompatToolbarController;
 
@@ -152,6 +161,13 @@ public class CarSystemBarControllerImpl implements CarSystemBarController,
     private int mSystemBarMode;
     private boolean mStatusBarTransientShown;
     private boolean mNavBarTransientShown;
+    @Nullable
+    private ContentObserver mArdaSystemBarModeObserver;
+    private final Runnable mRestartForArdaSystemBarMode = () -> {
+        Log.i(TAG, "ARDA_SYSTEM_BAR_MODE_RESTART=BEGIN");
+        restartSystemBars();
+        Log.i(TAG, "ARDA_SYSTEM_BAR_MODE_RESTART=PASS");
+    };
 
     public CarSystemBarControllerImpl(Context context,
             UserTracker userTracker,
@@ -192,6 +208,7 @@ public class CarSystemBarControllerImpl implements CarSystemBarController,
         mConfigurationController = configurationController;
         mCarSystemBarRestartTracker = restartTracker;
         mDisplayCompatToolbarController = toolbarController;
+        mMainHandler = handler;
     }
 
     /**
@@ -260,6 +277,7 @@ public class CarSystemBarControllerImpl implements CarSystemBarController,
 
         mConfigurationController.addCallback(/* listener= */ this);
         registerOverlayChangeBroadcastReceiver();
+        registerArdaSystemBarModeObserver();
 
         createSystemBar();
 
@@ -681,6 +699,33 @@ public class CarSystemBarControllerImpl implements CarSystemBarController,
 
             }
         });
+    }
+
+
+    private void registerArdaSystemBarModeObserver() {
+        if (mArdaSystemBarModeObserver != null) {
+            return;
+        }
+        mArdaSystemBarModeObserver = new ContentObserver(mMainHandler) {
+            @Override
+            public void onChange(boolean selfChange) {
+                mMainHandler.removeCallbacks(mRestartForArdaSystemBarMode);
+                mMainHandler.postDelayed(mRestartForArdaSystemBarMode, 250);
+            }
+        };
+        mContext.getContentResolver().registerContentObserver(
+                Settings.Global.getUriFor(ARDA_BOTTOM_HVAC_VISIBLE),
+                false,
+                mArdaSystemBarModeObserver);
+        mContext.getContentResolver().registerContentObserver(
+                Settings.Global.getUriFor(ARDA_LEFT_RAIL_WHEN_HVAC_HIDDEN),
+                false,
+                mArdaSystemBarModeObserver);
+        mContext.getContentResolver().registerContentObserver(
+                Settings.Global.getUriFor(ARDA_RIGHT_STATUS_RAIL_ENABLED),
+                false,
+                mArdaSystemBarModeObserver);
+        Log.i(TAG, "ARDA_SYSTEM_BAR_MODE_OBSERVER=REGISTERED");
     }
 
     private void registerOverlayChangeBroadcastReceiver() {

@@ -21,6 +21,7 @@ import android.content.Intent;
 import android.util.Log;
 import android.view.View;
 
+
 import com.android.systemui.car.systembar.element.CarSystemBarElementController;
 import com.android.systemui.car.systembar.element.CarSystemBarElementStateController;
 import com.android.systemui.car.systembar.element.CarSystemBarElementStatusBarDisableController;
@@ -41,9 +42,10 @@ public class HomeButtonController extends CarSystemBarButtonController  {
     private static final String ACTION_TOGGLE_MAP_FULLSCREEN =
             "com.android.car.carlauncher.action.TOGGLE_MAP_FULLSCREEN";
     private static final String CAR_LAUNCHER_PACKAGE = "com.android.car.carlauncher";
+    private static final String CAR_LAUNCHER_HOME_CLASS =
+            "com.android.car.carlauncher.CarLauncher";
     private static final String MAPS_PACKAGE = "com.google.android.apps.maps";
-    private static final String CONTROL_LAYOUT_PERMISSION =
-            "com.android.car.carlauncher.permission.CONTROL_LAYOUT";
+
 
     @AssistedInject
     public HomeButtonController(@Assisted CarSystemBarButton homeButton,
@@ -71,10 +73,6 @@ public class HomeButtonController extends CarSystemBarButtonController  {
             }
             Intent toggleIntent = new Intent(ACTION_TOGGLE_MAP_FULLSCREEN)
                     .setPackage(CAR_LAUNCHER_PACKAGE);
-            // CarLauncher registers this receiver with CONTROL_LAYOUT_PERMISSION,
-            // so only a signature-authorized sender can reach it. Do not also
-            // filter receivers by that permission here; that can discard the
-            // Launcher receiver itself.
             homeButton.getContext().sendBroadcastAsUser(
                     toggleIntent,
                     userTracker.getUserHandle());
@@ -103,12 +101,15 @@ public class HomeButtonController extends CarSystemBarButtonController  {
                     ? task.topActivity : task.baseActivity;
             String packageName = component != null
                     ? component.getPackageName() : null;
+            boolean isLauncherHomeActivity = component != null
+                    && CAR_LAUNCHER_PACKAGE.equals(packageName)
+                    && CAR_LAUNCHER_HOME_CLASS.equals(component.getClassName());
 
-            if (task.isVisible && CAR_LAUNCHER_PACKAGE.equals(packageName)) {
+            if (task.isVisible && isLauncherHomeActivity) {
                 launcherVisible = true;
             }
             if (task.isFocused
-                    && (CAR_LAUNCHER_PACKAGE.equals(packageName)
+                    && (isLauncherHomeActivity
                     || MAPS_PACKAGE.equals(packageName))) {
                 focusedTaskBelongsToHomeSurface = true;
             }

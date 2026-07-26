@@ -38,6 +38,7 @@ import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.os.Binder;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.util.ArrayMap;
 import android.util.Log;
 import android.view.Gravity;
@@ -82,6 +83,16 @@ public class SystemBarConfigsImpl implements SystemBarConfigs {
     private static final String TAG = SystemBarConfigs.class.getSimpleName();
     private static final boolean DEBUG = Log.isLoggable(TAG, Log.DEBUG);
     private static final Binder INSETS_OWNER = new Binder();
+    private static final String ARDA_BOTTOM_HVAC_VISIBLE =
+            "arda_bottom_hvac_visible";
+    private static final String ARDA_LEFT_RAIL_WHEN_HVAC_HIDDEN =
+            "arda_left_rail_when_hvac_hidden";
+    private static final String ARDA_RIGHT_STATUS_RAIL_ENABLED =
+            "arda_right_status_rail_enabled";
+    private static final String ARDA_LEFT_RAIL_RUNTIME_ACTIVE =
+            "arda_left_rail_runtime_active";
+    private static final String ARDA_RIGHT_STATUS_RAIL_RUNTIME_ACTIVE =
+            "arda_right_status_rail_runtime_active";
 
     /*
         NOTE: The elements' order in the map below must be preserved as-is since the correct
@@ -399,24 +410,87 @@ public class SystemBarConfigsImpl implements SystemBarConfigs {
         }
     }
 
+
+    private boolean isArdaLeftRailActive() {
+        boolean featureEnabled = Settings.Global.getInt(
+                mContext.getContentResolver(),
+                ARDA_LEFT_RAIL_WHEN_HVAC_HIDDEN,
+                0) != 0;
+        boolean bottomHvacVisible = Settings.Global.getInt(
+                mContext.getContentResolver(),
+                ARDA_BOTTOM_HVAC_VISIBLE,
+                1) != 0;
+        return featureEnabled && !bottomHvacVisible;
+    }
+
+    private boolean isArdaRightStatusRailActive() {
+        return Settings.Global.getInt(
+                mContext.getContentResolver(),
+                ARDA_RIGHT_STATUS_RAIL_ENABLED,
+                0) != 0;
+    }
+
     private void readConfigs() {
         mSystemBars.clear();
 
-        if (!mWindowProvider.getSystemBarWindows().isEmpty()) {
+        boolean ardaLeftRailActive = isArdaLeftRailActive();
+        boolean ardaRightStatusRailActive = isArdaRightStatusRailActive();
+        boolean ardaCustomSystemBarModeActive =
+                ardaLeftRailActive || ardaRightStatusRailActive;
+
+        // Scalable SystemUI normally supplies fixed top/bottom windows. Keep that
+        // provider-owned path only while ARDA's custom rail mode is inactive.
+        // When a rail is requested, build the side-specific windows below so
+        // top/bottom can actually be removed and left/right can be created.
+        if (!ardaCustomSystemBarModeActive
+                && !mWindowProvider.getSystemBarWindows().isEmpty()) {
             mWindowProvider.getSystemBarWindows().forEach(systemUiWindow -> {
                 SystemBarWindow systemBarWindow = (SystemBarWindow) systemUiWindow;
                 mSystemBars.put(systemBarWindow.getName(), systemBarWindow);
             });
+
+            mTopNavBarEnabled = mSystemBars.containsKey(TOP_BAR_NAME);
+            mBottomNavBarEnabled = mSystemBars.containsKey(BOTTOM_BAR_NAME);
+            mLeftNavBarEnabled = mSystemBars.containsKey(LEFT_BAR_NAME);
+            mRightNavBarEnabled = mSystemBars.containsKey(RIGHT_BAR_NAME);
+            mDisplayCompatToolbarState = mResources.getInteger(
+                    R.integer.config_showDisplayCompatToolbarOnSystemBar);
+
+            Log.i(TAG, "ARDA_WINDOW_PROVIDER_MODE=NORMAL bars="
+                    + mSystemBars.keySet());
+            publishArdaRuntimeSystemBarState();
             return;
         }
 
-
-        mTopNavBarEnabled = mResources.getBoolean(R.bool.config_enableTopSystemBar);
-        mBottomNavBarEnabled = mResources.getBoolean(R.bool.config_enableBottomSystemBar);
-        mLeftNavBarEnabled = mResources.getBoolean(R.bool.config_enableLeftSystemBar);
-        mRightNavBarEnabled = mResources.getBoolean(R.bool.config_enableRightSystemBar);
-        mDisplayCompatToolbarState = mResources.getInteger(
-                R.integer.config_showDisplayCompatToolbarOnSystemBar);
+        if (ardaCustomSystemBarModeActive
+                && !mWindowProvider.getSystemBarWindows().isEmpty()) {
+            Log.i(TAG, "ARDA_WINDOW_PROVIDER_BYPASS=YES leftRail="
+                    + ardaLeftRailActive
+                    + " rightStatusRail=" + ardaRightStatusRailActive
+                    + " providerBars="
+                    + mWindowProvider.getSystemBarWindows().size());
+        }
+        mTopNavBarEnabled = ardaRightStatusRailActive
+                ? false
+                : mResources.getBoolean(R.bool.config_enableTopSystemBar);
+        mBottomNavBarEnabled = ardaLeftRailActive
+                ? false
+                : mResources.getBoolean(R.bool.config_enableBottomSystemBar);
+        mLeftNavBarEnabled = ardaLeftRailActive
+                || ardaRightStatusRailActive
+                || mResources.getBoolean(R.bool.config_enableLeftSystemBar);
+        mRightNavBarEnabled = ardaRightStatusRailActive
+                || mResources.getBoolean(R.bool.config_enableRightSystemBar);
+        Log.i(TAG, "ARDA_SYSTEM_BAR_MODE leftRail=" + ardaLeftRailActive
+                + " rightStatusRail=" + ardaRightStatusRailActive
+                + " topEnabled=" + mTopNavBarEnabled
+                + " bottomEnabled=" + mBottomNavBarEnabled
+                + " leftEnabled=" + mLeftNavBarEnabled
+                + " rightEnabled=" + mRightNavBarEnabled);
+        mDisplayCompatToolbarState = ardaCustomSystemBarModeActive
+                ? 0
+                : mResources.getInteger(
+                        R.integer.config_showDisplayCompatToolbarOnSystemBar);
 
         if ((mLeftNavBarEnabled && isLeftDisplayCompatToolbarEnabled()) || (mRightNavBarEnabled
                 && isRightDisplayCompatToolbarEnabled())) {
@@ -495,6 +569,31 @@ public class SystemBarConfigsImpl implements SystemBarConfigs {
 
             mSystemBars.put(RIGHT_BAR_NAME, rightBarWindow);
         }
+
+        publishArdaRuntimeSystemBarState();
+    }
+
+    private void publishArdaRuntimeSystemBarState() {
+        boolean leftRailRuntimeActive =
+                mSystemBars.containsKey(LEFT_BAR_NAME)
+                        && !mSystemBars.containsKey(BOTTOM_BAR_NAME);
+        boolean rightStatusRailRuntimeActive =
+                mSystemBars.containsKey(RIGHT_BAR_NAME)
+                        && !mSystemBars.containsKey(TOP_BAR_NAME);
+
+        Settings.Global.putInt(
+                mContext.getContentResolver(),
+                ARDA_LEFT_RAIL_RUNTIME_ACTIVE,
+                leftRailRuntimeActive ? 1 : 0);
+        Settings.Global.putInt(
+                mContext.getContentResolver(),
+                ARDA_RIGHT_STATUS_RAIL_RUNTIME_ACTIVE,
+                rightStatusRailRuntimeActive ? 1 : 0);
+
+        Log.i(TAG, "ARDA_SYSTEM_BAR_RUNTIME_STATE leftRail="
+                + leftRailRuntimeActive
+                + " rightStatusRail=" + rightStatusRailRuntimeActive
+                + " bars=" + mSystemBars.keySet());
     }
 
     private void checkOnlyOneDisplayCompatIsEnabled() throws IllegalStateException {
