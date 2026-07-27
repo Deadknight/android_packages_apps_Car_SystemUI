@@ -26,13 +26,17 @@
     <com.android.systemui.car.statusicon.StatusIconView
         android:id="@+id/read_only_location_icon"
         android:layout_width="match_parent"
-        android:layout_height="@dimen/car_quick_controls_entry_points_button_width"
+        android:layout_height="32dp"
         android:layout_gravity="center"
         android:gravity="center"
         android:tint="@color/system_bar_icon_color"
         systemui:controller="com.android.systemui.car.statusicon.ui.LocationStatusIconController"
         systemui:systemBarDisable2Flags="systemIcons"
-        systemui:disableForLockTaskModeLocked="true"/>
+        systemui:disableForLockTaskModeLocked="true"
+        android:padding="7dp"
+        android:scaleType="centerInside"
+        android:clickable="false"
+        android:focusable="false"/>
 
     <com.android.systemui.car.systembar.CarSystemBarButton
         android:id="@+id/notifications"
@@ -42,7 +46,8 @@
         systemui:icon="@drawable/car_ic_notification_dock"
         systemui:longIntent="intent:#Intent;action=com.android.car.bugreport.action.BUG_REPORT;end"
         systemui:systemBarDisableFlags="notificationIcons"
-        systemui:controller="com.android.systemui.car.notification.NotificationButtonController"/>
+        systemui:controller="com.android.systemui.car.notification.NotificationButtonController"
+        android:layout_marginTop="8dp"/>
 
     <com.android.systemui.car.systembar.CarSystemBarPanelButtonView
         android:id="@+id/bluetooth_panel_button"
