@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<com.android.systemui.car.systembar.CarSystemBarView
+<com.android.systemui.car.systembar.ArdaNavigationSystemBarView
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:systemui="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -64,4 +64,4 @@
         systemui:intent="intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.HOME;launchFlags=0x14000000;end"
         systemui:systemBarDisableFlags="home"
         systemui:controller="com.android.systemui.car.systembar.HomeButtonController"/>
-</com.android.systemui.car.systembar.CarSystemBarView>
+</com.android.systemui.car.systembar.ArdaNavigationSystemBarView>

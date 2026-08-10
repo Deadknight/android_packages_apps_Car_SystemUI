@@ -296,4 +296,6 @@
     <!-- Data subscription button text [CHAR LIMIT=30]-->
     <string name="data_subscription_button_text">See plans</string>
 
+
+    <string name="arda_widget_drawer_button_label">Widgets</string>
 </resources>

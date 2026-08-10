@@ -15,7 +15,7 @@
   ~ limitations under the License.
   -->
 
-<com.android.systemui.car.systembar.CarSystemBarView
+<com.android.systemui.car.systembar.ArdaNavigationSystemBarView
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:systemui="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -164,4 +164,4 @@
             systemui:systemBarDisableFlags="home"
             systemui:controller="com.android.systemui.car.systembar.HomeButtonController"/>
     </LinearLayout>
-</com.android.systemui.car.systembar.CarSystemBarView>
+</com.android.systemui.car.systembar.ArdaNavigationSystemBarView>

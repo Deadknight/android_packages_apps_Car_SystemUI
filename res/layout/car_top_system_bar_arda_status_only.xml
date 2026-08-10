@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<com.android.systemui.car.systembar.CarSystemBarView
+<com.android.systemui.car.systembar.ArdaStatusSystemBarView
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:systemui="http://schemas.android.com/apk/res-auto"
     android:id="@+id/car_top_bar"
@@ -94,4 +94,4 @@
             android:layout_height="match_parent"
             android:layout_alignParentEnd="true"/>
     </RelativeLayout>
-</com.android.systemui.car.systembar.CarSystemBarView>
+</com.android.systemui.car.systembar.ArdaStatusSystemBarView>

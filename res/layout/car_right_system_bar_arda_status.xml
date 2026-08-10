@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<com.android.systemui.car.systembar.CarSystemBarView
+<com.android.systemui.car.systembar.ArdaStatusSystemBarView
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:systemui="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -48,6 +48,16 @@
         systemui:systemBarDisableFlags="notificationIcons"
         systemui:controller="com.android.systemui.car.notification.NotificationButtonController"
         android:layout_marginTop="8dp"/>
+
+    <com.android.systemui.car.systembar.ArdaWidgetSystemBarButton
+        android:id="@+id/arda_widget_drawer_button"
+        android:contentDescription="@string/arda_widget_drawer_button_label"
+        style="@style/SystemBarButton.Vertical"
+        systemui:highlightWhenSelected="true"
+        systemui:icon="@drawable/arda_ic_widgets"
+        systemui:intent="intent:#Intent;action=com.android.car.carlauncher.action.TOGGLE_WIDGET_DRAWER;component=com.android.car.carlauncher/.ArdaWidgetDrawerReceiver;end"
+        systemui:broadcast="true"
+        systemui:disabledWhileUnprovisioned="true"/>
 
     <com.android.systemui.car.systembar.CarSystemBarPanelButtonView
         android:id="@+id/bluetooth_panel_button"
@@ -171,4 +181,4 @@
             android:src="@drawable/car_ic_users_icon"
             android:tint="@color/system_bar_icon_color_with_selection"/>
     </com.android.systemui.car.systembar.CarSystemBarPanelButtonView>
-</com.android.systemui.car.systembar.CarSystemBarView>
+</com.android.systemui.car.systembar.ArdaStatusSystemBarView>
