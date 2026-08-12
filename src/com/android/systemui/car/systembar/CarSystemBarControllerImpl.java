@@ -861,8 +861,20 @@ public class CarSystemBarControllerImpl implements CarSystemBarController,
         mCarSystemBarRestartTracker.notifyPendingRestart(/* recreateWindows= */ true,
                 /* provisionedStateChanged= */ false);
 
-        resetSystemBarConfigs();
+        // Remove the OLD bar windows while the old SystemBarConfigs still owns them.
+        // If configs are reset first, Vertical -> Horizontal can lose ownership of
+        // left/right windows and leave them attached beside the new top/bottom bars.
+        ArrayList<String> oldBarNames = new ArrayList<>(mSystemBarWindowMap.keySet());
         clearSystemBarWindow(/* removeUnusedWindow= */ true);
+        mSystemBarWindowMap.clear();
+        mSystemBarViewControllerMap.clear();
+
+        resetSystemBarConfigs();
+        ArrayList<String> newBarNames =
+                new ArrayList<>(mSystemBarConfigs.getSystemBarNamesByZOrder());
+        Log.i(TAG, "ARDA_SYSTEM_BAR_WINDOW_RECREATE old=" + oldBarNames
+                + " new=" + newBarNames);
+
         buildNavBarWindows();
         buildNavBarContent();
         attachNavBarWindows();

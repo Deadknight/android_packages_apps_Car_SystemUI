@@ -28,7 +28,9 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.graphics.Insets;
 import android.graphics.Outline;
+import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
 import android.view.Gravity;
 import android.view.LayoutInflater;
@@ -36,6 +38,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
 import android.view.ViewTreeObserver;
+import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.widget.PopupWindow;
 import android.widget.Toast;
@@ -227,7 +230,9 @@ public class StatusIconPanelViewController extends ViewController<View> {
 
             registerFocusListener(true);
 
-            if (mShowAsDropDown) {
+            if (isVerticalSystemBarAnchor()) {
+                showBesideVerticalSystemBar();
+            } else if (mShowAsDropDown) {
                 // TODO(b/202563671): remove yOffsetPixel when the PopupWindow API is updated.
                 mPanel.showAsDropDown(mView, mXOffsetPixel, mYOffsetPixel, mPanelGravity);
             } else {
@@ -272,6 +277,69 @@ public class StatusIconPanelViewController extends ViewController<View> {
         mConfigurationController.removeCallback(mConfigurationListener);
         mUserTracker.removeCallback(mUserTrackerCallback);
         mBroadcastDispatcher.unregisterReceiver(mBroadcastReceiver);
+    }
+
+    private boolean isVerticalSystemBarAnchor() {
+        View root = mView.getRootView();
+        return root != null
+                && root.getWidth() > 0
+                && root.getHeight() > 0
+                && root.getHeight() > root.getWidth();
+    }
+
+    private void showBesideVerticalSystemBar() {
+        WindowManager windowManager = mContext.getSystemService(WindowManager.class);
+        if (windowManager == null || mPanelContent == null) {
+            mPanel.showAsDropDown(mView, mXOffsetPixel, mYOffsetPixel, mPanelGravity);
+            return;
+        }
+
+        Rect bounds = windowManager.getCurrentWindowMetrics().getBounds();
+        int panelWidth = mPanel.getWidth();
+        if (panelWidth <= 0) {
+            panelWidth = mContext.getResources().getDimensionPixelSize(mPanelWidthRes);
+        }
+
+        mPanelContent.measure(
+                View.MeasureSpec.makeMeasureSpec(panelWidth, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        int panelHeight = mPanelContent.getMeasuredHeight();
+
+        int[] anchorLocation = new int[2];
+        mView.getLocationOnScreen(anchorLocation);
+        int anchorCenterX = anchorLocation[0] + mView.getWidth() / 2;
+        boolean rightRail = anchorCenterX >= bounds.centerX();
+
+        int y = anchorLocation[1] + mView.getHeight() + mYOffsetPixel;
+
+        Insets overlayInsets = Insets.NONE;
+        WindowInsets rootInsets = mView.getRootWindowInsets();
+        if (rootInsets != null) {
+            overlayInsets = rootInsets.getInsets(WindowInsets.Type.systemOverlays());
+        }
+
+        int safeTop = bounds.top + overlayInsets.top;
+        int safeBottom = bounds.bottom - overlayInsets.bottom;
+        int maxY = Math.max(safeTop, safeBottom - panelHeight);
+        y = Math.max(safeTop, Math.min(y, maxY));
+
+        // Open toward the display interior. Existing xOffset is retained as spacing.
+        int spacing = Math.abs(mXOffsetPixel);
+        int x = rightRail
+                ? anchorLocation[0] - panelWidth - spacing
+                : anchorLocation[0] + mView.getWidth() + spacing;
+
+        int minX = bounds.left + overlayInsets.left;
+        int maxX = Math.max(minX, bounds.right - overlayInsets.right - panelWidth);
+        x = Math.max(minX, Math.min(x, maxX));
+
+        mPanel.showAtLocation(mView, Gravity.TOP | Gravity.START, x, y);
+        android.util.Log.i("ArdaVerticalQcPanel",
+                "ARDA_VERTICAL_QC_PANEL side=" + (rightRail ? "RIGHT" : "LEFT")
+                        + " x=" + x + " y=" + y
+                        + " panel=" + panelWidth + "x" + panelHeight
+                        + " anchor=" + anchorLocation[0] + "," + anchorLocation[1]
+                        + " safeY=" + safeTop + ".." + safeBottom);
     }
 
     @VisibleForTesting
