@@ -123,6 +123,28 @@
             android:layout_height="match_parent"
             android:layout_weight="1"/>
 
+        <!-- ARDA_HORIZONTAL_WIDGET_BUTTON left_of_notifications -->
+        <com.android.systemui.car.systembar.ArdaWidgetSystemBarButton
+            android:id="@+id/arda_widget_drawer_button"
+            android:contentDescription="@string/arda_widget_drawer_button_label"
+            style="@style/SystemBarButton"
+            systemui:highlightWhenSelected="true"
+            systemui:icon="@drawable/arda_ic_widgets"
+            systemui:intent="intent:#Intent;action=com.android.car.carlauncher.action.TOGGLE_WIDGET_DRAWER;component=com.android.car.carlauncher/.ArdaWidgetDrawerReceiver;end"
+            systemui:broadcast="true"
+            systemui:disabledWhileUnprovisioned="true"/>
+
+        <!-- ARDA_HORIZONTAL_NOTIFICATION_BUTTON left_of_assistant -->
+        <com.android.systemui.car.systembar.CarSystemBarButton
+            android:id="@+id/notifications"
+            android:contentDescription="@string/system_bar_notifications_label"
+            style="@style/SystemBarButton"
+            systemui:highlightWhenSelected="true"
+            systemui:icon="@drawable/car_ic_notification_dock"
+            systemui:longIntent="intent:#Intent;action=com.android.car.bugreport.action.BUG_REPORT;end"
+            systemui:systemBarDisableFlags="notificationIcons"
+            systemui:controller="com.android.systemui.car.notification.NotificationButtonController"/>
+
         <com.android.systemui.car.systembar.AssistantButton
             android:id="@+id/assistant"
             android:contentDescription="@string/system_bar_assistant_label"
