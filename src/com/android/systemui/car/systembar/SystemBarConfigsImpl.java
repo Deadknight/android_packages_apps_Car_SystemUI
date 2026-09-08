@@ -14,6 +14,10 @@
  * limitations under the License.
  */
 package com.android.systemui.car.systembar;
+import android.os.Looper;
+import android.os.Handler;
+import android.database.ContentObserver;
+import android.view.WindowMetrics;
 
 import static android.view.WindowInsets.Type.mandatorySystemGestures;
 import static android.view.WindowInsets.Type.navigationBars;
@@ -247,8 +251,11 @@ public class SystemBarConfigsImpl implements SystemBarConfigs {
 
     @Override
     public WindowManager.LayoutParams getLayoutParamsByName(@NonNull String name) {
-        return mSystemBars.get(name) != null ? mSystemBars.get(name).getLayoutParams()
-                : null;
+        SystemBarWindow window = mSystemBars.get(name);
+        if (window == null) {
+            return null;
+        }
+        return window.getLayoutParams();
     }
 
     @Override
@@ -747,6 +754,7 @@ public class SystemBarConfigsImpl implements SystemBarConfigs {
         return mSystemBars.get(name) != null ? mSystemBars.get(name) : null;
     }
 
+
     private static final class SystemBarConfigBuilder {
         private int mBarType;
         private int mZOrder;
@@ -798,6 +806,30 @@ public class SystemBarConfigsImpl implements SystemBarConfigs {
     private static class InternalSystemBarWindow implements SystemBarWindow {
         private final int mGirth;
         private final SystemBarConfiguration mConfig;
+        private final Context mContext;
+        // ARDA_PROJECTION_CONTENT_SETTINGS_V6
+        private static final String ARDA_CONTENT_INSETS =
+                "arda_projection_content_insets";
+        private static final String ARDA_CONTENT_LEFT =
+                "arda_projection_inset_left";
+        private static final String ARDA_CONTENT_TOP =
+                "arda_projection_inset_top";
+        private static final String ARDA_CONTENT_RIGHT =
+                "arda_projection_inset_right";
+        private static final String ARDA_CONTENT_BOTTOM =
+                "arda_projection_inset_bottom";
+
+        private WindowManager.LayoutParams mArdaBaseLayoutParams;
+        private boolean mArdaProjectionObserverRegistered;
+
+        private final ContentObserver mArdaProjectionObserver =
+                new ContentObserver(new Handler(Looper.getMainLooper())) {
+                    @Override
+                    public void onChange(boolean selfChange) {
+                        ardaRefreshFromProjectionSettings("settings-change");
+                    }
+                };
+
         private final WindowManager mWindowManager;
         private final Function<String, Boolean> mHorizontalChecker;
         private final Rect mWindowBounds;
@@ -808,6 +840,7 @@ public class SystemBarConfigsImpl implements SystemBarConfigs {
                 Function<String, Boolean> horizontalChecker) {
             mGirth = girth;
             mConfig = config;
+            mContext = ctx;
             Context context = ctx.createWindowContext(mapZOrderToBarType(mConfig.getZOrder()),
                     null);
             mWindowManager = context.getSystemService(WindowManager.class);
@@ -827,16 +860,257 @@ public class SystemBarConfigsImpl implements SystemBarConfigs {
                 removeRootView();
             }
             mRootView = view;
-            mWindowManager.addView(mRootView, layoutParams);
+
+            mArdaBaseLayoutParams = ardaCopyLayoutParams(layoutParams);
+
+            final Insets safe = ardaReadProjectionContentInsets();
+            final WindowManager.LayoutParams appliedLayoutParams =
+                    ardaApplySafeLayoutParamsForInsets(mArdaBaseLayoutParams, safe);
+
+            Log.i(
+                    TAG,
+                    "ARDA_PROJECTION_CONTENT_INITIAL_APPLY"
+                            + " name=" + mConfig.getName()
+                            + " content="
+                            + safe.left + "," + safe.top + ","
+                            + safe.right + "," + safe.bottom
+                            + " incoming=w" + layoutParams.width
+                            + " h=" + layoutParams.height
+                            + " x=" + layoutParams.x
+                            + " y=" + layoutParams.y
+                            + " applied=w" + appliedLayoutParams.width
+                            + " h=" + appliedLayoutParams.height
+                            + " x=" + appliedLayoutParams.x
+                            + " y=" + appliedLayoutParams.y);
+
+            mWindowManager.addView(mRootView, appliedLayoutParams);
+            ardaRegisterProjectionObserver();
+
+            mRootView.post(() ->
+                    ardaRefreshFromProjectionSettings("post-attach"));
+        }
+
+        private boolean ardaSameWindowGeometry(
+                WindowManager.LayoutParams a,
+                WindowManager.LayoutParams b) {
+            return a.width == b.width
+                    && a.height == b.height
+                    && a.x == b.x
+                    && a.y == b.y
+                    && a.gravity == b.gravity;
+        }
+
+        private WindowManager.LayoutParams ardaApplySafeLayoutParamsForInsets(
+                WindowManager.LayoutParams source,
+                Insets safe) {
+            if (source == null || Settings.Global.getInt(
+                    mContext.getContentResolver(),
+                    "arda_system_bar_respect_safe_area",
+                    1) == 0) {
+                return source;
+            }
+
+            final Rect displayBounds =
+                    mWindowManager.getCurrentWindowMetrics().getBounds();
+            final int displayWidth = displayBounds.width();
+            final int displayHeight = displayBounds.height();
+
+            final int safeLeft = Math.min(
+                    Math.max(0, safe.left),
+                    Math.max(0, displayWidth - 1));
+            final int safeTop = Math.min(
+                    Math.max(0, safe.top),
+                    Math.max(0, displayHeight - 1));
+            final int safeRight = Math.min(
+                    Math.max(0, safe.right),
+                    Math.max(0, displayWidth - safeLeft - 1));
+            final int safeBottom = Math.min(
+                    Math.max(0, safe.bottom),
+                    Math.max(0, displayHeight - safeTop - 1));
+
+            final int safeWidth = Math.max(
+                    1,
+                    displayWidth - safeLeft - safeRight);
+            final int safeHeight = Math.max(
+                    1,
+                    displayHeight - safeTop - safeBottom);
+
+            final WindowManager.LayoutParams result =
+                    new WindowManager.LayoutParams();
+            result.copyFrom(source);
+
+            final String name = mConfig.getName();
+
+            if (LEFT_BAR_NAME.equals(name)) {
+                result.width = mGirth;
+                result.height = safeHeight;
+                result.gravity = Gravity.LEFT | Gravity.TOP;
+                result.x = safeLeft;
+                result.y = safeTop;
+            } else if (RIGHT_BAR_NAME.equals(name)) {
+                result.width = mGirth;
+                result.height = safeHeight;
+                result.gravity = Gravity.RIGHT | Gravity.TOP;
+                result.x = safeRight;
+                result.y = safeTop;
+            } else if (TOP_BAR_NAME.equals(name)) {
+                result.width = safeWidth;
+                result.height = mGirth;
+                result.gravity = Gravity.LEFT | Gravity.TOP;
+                result.x = safeLeft;
+                result.y = safeTop;
+            } else if (BOTTOM_BAR_NAME.equals(name)) {
+                result.width = safeWidth;
+                result.height = mGirth;
+                result.gravity = Gravity.LEFT | Gravity.BOTTOM;
+                result.x = safeLeft;
+                result.y = safeBottom;
+            }
+
+            return result;
+        }
+
+        private WindowManager.LayoutParams ardaCopyLayoutParams(
+                WindowManager.LayoutParams source) {
+            final WindowManager.LayoutParams copy =
+                    new WindowManager.LayoutParams();
+            copy.copyFrom(source);
+            return copy;
+        }
+
+        private Insets ardaReadProjectionContentInsets() {
+            final String raw = Settings.Global.getString(
+                    mContext.getContentResolver(),
+                    ARDA_CONTENT_INSETS);
+
+            if (raw != null) {
+                final String[] parts = raw.trim().split(",");
+                if (parts.length == 4) {
+                    try {
+                        return Insets.of(
+                                Math.max(0, Integer.parseInt(parts[0].trim())),
+                                Math.max(0, Integer.parseInt(parts[1].trim())),
+                                Math.max(0, Integer.parseInt(parts[2].trim())),
+                                Math.max(0, Integer.parseInt(parts[3].trim())));
+                    } catch (NumberFormatException ignored) {
+                        Log.w(
+                                TAG,
+                                "ARDA_PROJECTION_CONTENT_PARSE_FAILED raw=" + raw);
+                    }
+                }
+            }
+
+            return Insets.of(
+                    Math.max(0, Settings.Global.getInt(
+                            mContext.getContentResolver(),
+                            ARDA_CONTENT_LEFT,
+                            0)),
+                    Math.max(0, Settings.Global.getInt(
+                            mContext.getContentResolver(),
+                            ARDA_CONTENT_TOP,
+                            0)),
+                    Math.max(0, Settings.Global.getInt(
+                            mContext.getContentResolver(),
+                            ARDA_CONTENT_RIGHT,
+                            0)),
+                    Math.max(0, Settings.Global.getInt(
+                            mContext.getContentResolver(),
+                            ARDA_CONTENT_BOTTOM,
+                            0)));
+        }
+
+        private void ardaRegisterProjectionObserver() {
+            if (mArdaProjectionObserverRegistered) {
+                return;
+            }
+
+            mContext.getContentResolver().registerContentObserver(
+                    Settings.Global.getUriFor(ARDA_CONTENT_INSETS),
+                    false,
+                    mArdaProjectionObserver);
+            mContext.getContentResolver().registerContentObserver(
+                    Settings.Global.getUriFor("arda_system_bar_respect_safe_area"),
+                    false,
+                    mArdaProjectionObserver);
+
+            mArdaProjectionObserverRegistered = true;
+
+            Log.i(
+                    TAG,
+                    "ARDA_PROJECTION_CONTENT_OBSERVER_REGISTERED"
+                            + " name=" + mConfig.getName());
+        }
+
+        private void ardaUnregisterProjectionObserver() {
+            if (!mArdaProjectionObserverRegistered) {
+                return;
+            }
+
+            mContext.getContentResolver().unregisterContentObserver(
+                    mArdaProjectionObserver);
+            mArdaProjectionObserverRegistered = false;
+        }
+
+        private void ardaRefreshFromProjectionSettings(String reason) {
+            final View root = mRootView;
+            final WindowManager.LayoutParams base = mArdaBaseLayoutParams;
+
+            if (root == null
+                    || base == null
+                    || !root.isAttachedToWindow()
+                    || !(root.getLayoutParams()
+                            instanceof WindowManager.LayoutParams)) {
+                return;
+            }
+
+            final Insets safe = ardaReadProjectionContentInsets();
+            final WindowManager.LayoutParams current =
+                    (WindowManager.LayoutParams) root.getLayoutParams();
+            final WindowManager.LayoutParams desired =
+                    ardaApplySafeLayoutParamsForInsets(base, safe);
+
+            if (ardaSameWindowGeometry(current, desired)) {
+                return;
+            }
+
+            Log.i(
+                    TAG,
+                    "ARDA_PROJECTION_CONTENT_UPDATE_VIEW_LAYOUT"
+                            + " name=" + mConfig.getName()
+                            + " reason=" + reason
+                            + " content="
+                            + safe.left + "," + safe.top + ","
+                            + safe.right + "," + safe.bottom
+                            + " current=w" + current.width
+                            + " h=" + current.height
+                            + " x=" + current.x
+                            + " y=" + current.y
+                            + " desired=w" + desired.width
+                            + " h=" + desired.height
+                            + " x=" + desired.x
+                            + " y=" + desired.y);
+
+            mWindowManager.updateViewLayout(root, desired);
+        }
+
+        // ARDA_FINAL_ADDVIEW_SAFE_BOUNDS_V4
+        private WindowManager.LayoutParams ardaApplyFinalSafeLayoutParams(
+                WindowManager.LayoutParams source) {
+            return ardaApplySafeLayoutParamsForInsets(
+                    source,
+                    ardaReadProjectionContentInsets());
         }
 
         @Override
         public void removeRootView() {
-            if (mRootView == null) {
-                return;
+            ardaUnregisterProjectionObserver();
+
+            if (mRootView != null) {
+                mWindowManager.removeView(mRootView);
+                mRootView = null;
             }
-            mWindowManager.removeView(mRootView);
-            mRootView = null;
+
+            mArdaBaseLayoutParams = null;
         }
 
         @Override
@@ -874,64 +1148,184 @@ public class SystemBarConfigsImpl implements SystemBarConfigs {
 
         @Override
         public WindowManager.LayoutParams getLayoutParams() {
-            WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
-                    mHorizontalChecker.apply(mConfig.getName())
-                            ? ViewGroup.LayoutParams.MATCH_PARENT : mGirth,
-                    mHorizontalChecker.apply(mConfig.getName()) ? mGirth
-                            : ViewGroup.LayoutParams.MATCH_PARENT,
+            final Rect bounds = getBounds();
+            final WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+                    bounds.width(),
+                    bounds.height(),
                     mapZOrderToBarType(mConfig.getZOrder()),
                     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                             | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
                             | WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
-                            | WindowManager.LayoutParams.FLAG_SPLIT_TOUCH, PixelFormat.TRANSLUCENT);
+                            | WindowManager.LayoutParams.FLAG_SPLIT_TOUCH,
+                    PixelFormat.TRANSLUCENT);
+
             lp.setTitle(mConfig.getName());
-            lp.providedInsets = new InsetsFrameProvider[]{new InsetsFrameProvider(INSETS_OWNER,
-                    mConfig.getIndex(),
-                    mConfig.getType() == STATUS_BAR ? statusBars() : navigationBars()),
-                    new InsetsFrameProvider(INSETS_OWNER,
-                            mConfig.getType() == STATUS_BAR ? mConfig.getIndex()
+            lp.providedInsets = new InsetsFrameProvider[]{
+                    new InsetsFrameProvider(
+                            INSETS_OWNER,
+                            mConfig.getIndex(),
+                            mConfig.getType() == STATUS_BAR ? statusBars() : navigationBars()),
+                    new InsetsFrameProvider(
+                            INSETS_OWNER,
+                            mConfig.getType() == STATUS_BAR
+                                    ? mConfig.getIndex()
                                     : mConfig.getMandatorySystemGestureIndexOffset()
-                                            + mConfig.getIndex(), mandatorySystemGestures())};
+                                            + mConfig.getIndex(),
+                            mandatorySystemGestures())
+            };
             lp.setFitInsetsTypes(0);
             lp.windowAnimations = 0;
-            lp.gravity = BAR_GRAVITY_MAP.get(mConfig.getName());
+
+            final String name = mConfig.getName();
+            if (LEFT_BAR_NAME.equals(name)) {
+                lp.gravity = Gravity.LEFT | Gravity.TOP;
+                lp.y = bounds.top;
+            } else if (RIGHT_BAR_NAME.equals(name)) {
+                lp.gravity = Gravity.RIGHT | Gravity.TOP;
+                lp.y = bounds.top;
+            } else if (TOP_BAR_NAME.equals(name)) {
+                lp.gravity = Gravity.TOP | Gravity.LEFT;
+                lp.x = bounds.left;
+            } else {
+                lp.gravity = Gravity.BOTTOM | Gravity.LEFT;
+                lp.x = bounds.left;
+            }
+
             lp.layoutInDisplayCutoutMode = LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
             lp.privateFlags = lp.privateFlags
                     | WindowManager.LayoutParams.PRIVATE_FLAG_INTERCEPT_GLOBAL_DRAG_AND_DROP;
+
+            Log.i(
+                    TAG,
+                    "ARDA_INTERNAL_SYSTEM_BAR_SAFE_APPLY"
+                            + " name=" + name
+                            + " enabled=" + ardaSafeAreaEnabled()
+                            + " display=" + mWindowBounds
+                            + " safe=" + ardaSafeLeft() + "," + ardaSafeTop()
+                            + "," + ardaSafeRight() + "," + ardaSafeBottom()
+                            + " bounds=" + bounds
+                            + " lp=w" + lp.width
+                            + " h=" + lp.height
+                            + " x=" + lp.x
+                            + " y=" + lp.y
+                            + " gravity=0x" + Integer.toHexString(lp.gravity));
+
             return lp;
         }
 
         @Nullable
         @Override
         public Rect getBounds() {
-            Rect rect;
-            if (mConfig.getName().equals(TOP_BAR_NAME)) {
-                rect = new Rect(0, 0, mWindowBounds.width(), mGirth);
-            } else if (mConfig.getName().equals(LEFT_BAR_NAME)) {
-                rect = new Rect(0, 0, mGirth, mWindowBounds.height());
-            } else if (mConfig.getName().equals(BOTTOM_BAR_NAME)) {
-                rect = new Rect(0, mWindowBounds.height() - mGirth, mWindowBounds.width(),
-                        mWindowBounds.height());
+            final String name = mConfig.getName();
+            final int leftInset = ardaSafeAreaEnabled() ? ardaSafeLeft() : 0;
+            final int topInset = ardaSafeAreaEnabled() ? ardaSafeTop() : 0;
+            final int rightInset = ardaSafeAreaEnabled() ? ardaSafeRight() : 0;
+            final int bottomInset = ardaSafeAreaEnabled() ? ardaSafeBottom() : 0;
+
+            final int displayWidth = mWindowBounds.width();
+            final int displayHeight = mWindowBounds.height();
+
+            final int safeLeft = Math.min(
+                    Math.max(0, leftInset),
+                    Math.max(0, displayWidth - 1));
+            final int safeTop = Math.min(
+                    Math.max(0, topInset),
+                    Math.max(0, displayHeight - 1));
+            final int safeRight = Math.min(
+                    Math.max(0, rightInset),
+                    Math.max(0, displayWidth - safeLeft - 1));
+            final int safeBottom = Math.min(
+                    Math.max(0, bottomInset),
+                    Math.max(0, displayHeight - safeTop - 1));
+
+            if (TOP_BAR_NAME.equals(name)) {
+                return new Rect(
+                        safeLeft,
+                        0,
+                        displayWidth - safeRight,
+                        mGirth);
+            } else if (LEFT_BAR_NAME.equals(name)) {
+                return new Rect(
+                        0,
+                        safeTop,
+                        mGirth,
+                        displayHeight - safeBottom);
+            } else if (BOTTOM_BAR_NAME.equals(name)) {
+                return new Rect(
+                        safeLeft,
+                        displayHeight - mGirth,
+                        displayWidth - safeRight,
+                        displayHeight);
             } else {
-                rect = new Rect(mWindowBounds.width() - mGirth, 0, mWindowBounds.width(),
-                        mWindowBounds.height());
+                return new Rect(
+                        displayWidth - mGirth,
+                        safeTop,
+                        displayWidth,
+                        displayHeight - safeBottom);
             }
-            return rect;
         }
 
         @Override
         public int getHeight() {
-            return mHorizontalChecker.apply(mConfig.getName()) ? mGirth : mWindowBounds.height();
+            return getBounds().height();
         }
 
         @Override
         public int getWidth() {
-            return mHorizontalChecker.apply(mConfig.getName()) ? mWindowBounds.width() : mGirth;
+            return getBounds().width();
         }
 
         @Override
         public float getAlpha() {
             return 1;
+        }
+
+        // ARDA_INTERNAL_SYSTEM_BAR_SAFE_BOUNDS_V3
+        private static final String ARDA_SAFE_ENABLED =
+                "arda_system_bar_respect_safe_area";
+        private static final String ARDA_SAFE_LEFT =
+                "arda_projection_stable_inset_left";
+        private static final String ARDA_SAFE_TOP =
+                "arda_projection_stable_inset_top";
+        private static final String ARDA_SAFE_RIGHT =
+                "arda_projection_stable_inset_right";
+        private static final String ARDA_SAFE_BOTTOM =
+                "arda_projection_stable_inset_bottom";
+
+        private boolean ardaSafeAreaEnabled() {
+            return Settings.Global.getInt(
+                    mContext.getContentResolver(),
+                    ARDA_SAFE_ENABLED,
+                    1) != 0;
+        }
+
+        private int ardaReadSafeInset(String key) {
+            return Math.max(
+                    0,
+                    Settings.Global.getInt(
+                            mContext.getContentResolver(),
+                            key,
+                            0));
+        }
+
+        private Insets ardaCurrentSystemOverlays() {
+            return ardaReadProjectionContentInsets();
+        }
+
+        private int ardaSafeLeft() {
+            return ardaCurrentSystemOverlays().left;
+        }
+
+        private int ardaSafeTop() {
+            return ardaCurrentSystemOverlays().top;
+        }
+
+        private int ardaSafeRight() {
+            return ardaCurrentSystemOverlays().right;
+        }
+
+        private int ardaSafeBottom() {
+            return ardaCurrentSystemOverlays().bottom;
         }
 
         @Override
