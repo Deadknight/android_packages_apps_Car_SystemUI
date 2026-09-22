@@ -883,7 +883,11 @@ public class SystemBarConfigsImpl implements SystemBarConfigs {
                             + " x=" + appliedLayoutParams.x
                             + " y=" + appliedLayoutParams.y);
 
-            mWindowManager.addView(mRootView, appliedLayoutParams);
+            // ARDA_DHU_SYSTEM_BAR_EDGE_ANCHOR_INITIAL_V1
+            final View ardaInitialView = mRootView;
+            final WindowManager.LayoutParams ardaInitialLayoutParams = appliedLayoutParams;
+            ardaDhuEdgeAnchorProjectionBar(ardaInitialView, ardaInitialLayoutParams);
+            mWindowManager.addView(ardaInitialView, ardaInitialLayoutParams);
             ardaRegisterProjectionObserver();
 
             mRootView.post(() ->
@@ -1090,6 +1094,8 @@ public class SystemBarConfigsImpl implements SystemBarConfigs {
                             + " x=" + desired.x
                             + " y=" + desired.y);
 
+            // ARDA_DHU_SYSTEM_BAR_EDGE_ANCHOR_V1
+            ardaDhuEdgeAnchorProjectionBar(root, desired);
             mWindowManager.updateViewLayout(root, desired);
         }
 
@@ -1362,4 +1368,115 @@ public class SystemBarConfigsImpl implements SystemBarConfigs {
             return mConfig;
         }
     }
+
+    // ARDA_DHU_SYSTEM_BAR_EDGE_ANCHOR_V1
+    //
+    // V6 owns projection safe geometry through
+    // Settings.Global arda_projection_content_insets. For top/bottom bars,
+    // applying the safe inset as WindowManager.LayoutParams.y detaches the
+    // provider window from the physical edge, causing WMS sideHint to become
+    // NONE. Keep the provider window edge-anchored and preserve control
+    // position with equivalent internal root padding.
+    private static final java.util.WeakHashMap<View, int[]> mArdaDhuEdgeBasePadding =
+            new java.util.WeakHashMap<>();
+
+    private static void ardaDhuEdgeAnchorProjectionBar(
+            View view, WindowManager.LayoutParams lp) {
+        if (view == null || lp == null) {
+            return;
+        }
+
+        int[] basePadding = mArdaDhuEdgeBasePadding.get(view);
+        if (basePadding == null) {
+            basePadding = new int[] {
+                    view.getPaddingLeft(),
+                    view.getPaddingTop(),
+                    view.getPaddingRight(),
+                    view.getPaddingBottom()
+            };
+            mArdaDhuEdgeBasePadding.put(view, basePadding);
+        }
+
+        boolean respect = Settings.Global.getInt(
+                view.getContext().getContentResolver(),
+                "arda_system_bar_respect_safe_area",
+                1) != 0;
+
+        int safeLeft = 0;
+        int safeTop = 0;
+        int safeRight = 0;
+        int safeBottom = 0;
+
+        String raw = Settings.Global.getString(
+                view.getContext().getContentResolver(),
+                "arda_projection_content_insets");
+
+        if (raw != null) {
+            String[] parts = raw.split(",");
+            if (parts.length == 4) {
+                try {
+                    safeLeft = Math.max(0, Integer.parseInt(parts[0].trim()));
+                    safeTop = Math.max(0, Integer.parseInt(parts[1].trim()));
+                    safeRight = Math.max(0, Integer.parseInt(parts[2].trim()));
+                    safeBottom = Math.max(0, Integer.parseInt(parts[3].trim()));
+                } catch (NumberFormatException ignored) {
+                    safeLeft = safeTop = safeRight = safeBottom = 0;
+                }
+            }
+        }
+
+        int outLeft = basePadding[0];
+        int outTop = basePadding[1];
+        int outRight = basePadding[2];
+        int outBottom = basePadding[3];
+
+        if (!respect) {
+            view.setPadding(outLeft, outTop, outRight, outBottom);
+            return;
+        }
+
+        final int verticalGravity =
+                lp.gravity & android.view.Gravity.VERTICAL_GRAVITY_MASK;
+
+        // Runtime top/bottom bars are wide fixed-height windows.
+        // Side rails are tall/narrow and keep the existing V6 behavior.
+        final boolean horizontalBar =
+                lp.width > 0
+                        && lp.height > 0
+                        && lp.width > lp.height;
+
+        int beforeH = lp.height;
+        int beforeY = lp.y;
+
+        if (horizontalBar
+                && verticalGravity == android.view.Gravity.TOP
+                && safeTop > 0) {
+            lp.y = 0;
+            lp.height += safeTop;
+            outTop += safeTop;
+        } else if (horizontalBar
+                && verticalGravity == android.view.Gravity.BOTTOM
+                && safeBottom > 0) {
+            lp.y = 0;
+            lp.height += safeBottom;
+            outBottom += safeBottom;
+        }
+
+        view.setPadding(outLeft, outTop, outRight, outBottom);
+
+        if (beforeH != lp.height || beforeY != lp.y) {
+            Log.i(TAG,
+                    "ARDA_DHU_SYSTEM_BAR_EDGE_ANCHOR_V1"
+                            + " gravity=0x" + Integer.toHexString(lp.gravity)
+                            + " safe=" + safeLeft + "," + safeTop + ","
+                            + safeRight + "," + safeBottom
+                            + " beforeH=" + beforeH
+                            + " beforeY=" + beforeY
+                            + " afterH=" + lp.height
+                            + " afterY=" + lp.y
+                            + " padding=" + outLeft + "," + outTop + ","
+                            + outRight + "," + outBottom);
+        }
+    }
+
 }
